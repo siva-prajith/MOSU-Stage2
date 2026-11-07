@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOSU Workflow Demonstrator</title>
+<!-- Lets the browser run the kit's contract.mjs unchanged: its one node:crypto import maps to a tested SHA-256 shim. -->
+<script type="importmap">{ "imports": { "node:crypto": "./web/crypto-shim.mjs" } }</script>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --ink:#1d2330; --muted:#677083; --line:#d7dbe3; --exec:#2457c5; --exec-bg:#eaf0fd;
+          --active:#e8590c; --ok:#1a7f4b; --warn:#b54708; --err:#c0262d; --ai:#7a3fd1; --concept:#9aa1ad; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:14px 20px; background:#141a26; color:#fff; }
+  header h1 { margin:0; font-size:18px; } header p { margin:2px 0 0; color:#b9c1d0; font-size:13px; }
+  main { display:grid; grid-template-columns: 380px 1fr; gap:14px; padding:14px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:14px; }
+  h2 { font-size:14px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.04em; color:#3a4254; }
+  h2 small { text-transform:none; letter-spacing:0; color:var(--muted); font-weight:400; }
+  button { font:inherit; padding:7px 10px; border-radius:7px; border:1px solid #b9c2d3; background:#fff; cursor:pointer; text-align:left; }
+  button:hover:not(:disabled) { background:#eef2f8; } button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--exec); color:#fff; border-color:var(--exec); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0; }
+  .col { display:flex; flex-direction:column; gap:6px; }
+  .pulse { outline:3px solid var(--active); outline-offset:1px; }
+  select { font:inherit; padding:6px; border-radius:7px; }
+  ol#steps { margin:6px 0; padding-left:20px; } ol#steps li { margin:3px 0; color:var(--muted); }
+  ol#steps li.done { text-decoration:line-through; } ol#steps li.now { color:var(--ink); font-weight:600; }
+  .dec { background:#fff1e6; color:var(--active); border-radius:4px; padding:0 4px; font-size:11px; font-weight:600; }
+  .narr { border-left:4px solid var(--concept); background:#f3f4f6; padding:8px 10px; font-style:italic; color:#444c5c; border-radius:4px; }
+  .narr::before { content:'Narration (explanation only, not an executed action): '; font-style:normal; font-weight:600; display:block; font-size:11px; color:var(--muted); }
+  .box { padding:8px 10px; border-radius:6px; margin-top:8px; }
+  .pause { background:#fff7e6; border:1px solid #f5c26b; } .recon { background:#fdecec; border:1px solid #f1a9ad; }
+  table { width:100%; border-collapse:collapse; } th,td { text-align:left; vertical-align:top; padding:4px 6px; border-bottom:1px solid #eef0f4; }
+  th { width:40%; color:var(--muted); font-weight:500; } td { word-break:break-word; }
+  code { font:12px ui-monospace, SFMono-Regular, Consolas, monospace; background:#f1f3f7; padding:1px 4px; border-radius:4px; word-break:break-all; }
+  .ok { color:var(--ok); font-weight:600; } .warn { color:var(--warn); font-weight:600; }
+  .st { font-weight:700; padding:1px 6px; border-radius:4px; } .st-sent { background:#e3f5ea; color:var(--ok); }
+  .st-unknown { background:#fff1e6; color:var(--active); } .st-not_sent { background:#eef0f4; color:#465063; }
+  .kpis { display:flex; gap:8px; flex-wrap:wrap; } .kpi { flex:1 1 100px; border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  .kpi b { font-size:22px; display:block; } .kpi span { font-size:12px; color:var(--muted); }
+  .provider { border:2px dashed #c9a227; background:#fffbea; }
+  .provider h2 { color:#8a6d00; } .plist { font-size:12px; margin-top:6px; }
+  svg { width:100%; height:auto; display:block; }
+  .node rect { fill:#fff; stroke:var(--exec); stroke-width:1.5; }
+  .node text { font-size:11.5px; text-anchor:middle; fill:var(--ink); font-weight:600; } .node text.sub { font-weight:400; fill:#4a5263; font-size:10.5px; }
+  .node.seen rect { fill:var(--exec-bg); }
+  .node.ai rect { stroke:var(--ai); } .node.ai.seen rect { fill:#f2eafd; }
+  .node.concept rect { stroke:var(--concept); stroke-dasharray:5 4; fill:#fafafa; } .node.concept text { fill:#7c8391; }
+  .node.active rect { stroke:var(--active); stroke-width:4; fill:#fff4ec; }
+  .tag { font-size:10px; fill:var(--concept); font-style:italic; } .tag.ai { fill:var(--ai); font-style:normal; font-weight:600; }
+  .edge { fill:none; stroke:#8592ab; stroke-width:1.4; } .edge.concept { stroke:var(--concept); stroke-dasharray:5 4; }
+  .edge.loop { stroke:var(--active); stroke-width:1.8; } .arrowhead { fill:#8592ab; }
+  .elabel { font-size:10.5px; fill:#4a5263; } .edge.tick { stroke:#c3c9d5; stroke-width:1; stroke-dasharray:2 2; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:6px; }
+  .legend i { display:inline-block; width:22px; height:12px; border-radius:3px; vertical-align:middle; margin-right:4px; }
+  #trace { max-height:620px; overflow:auto; }
+  .tev { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:8px; }
+  .thead .num { color:var(--muted); } .pill { font-size:11px; background:var(--exec-bg); color:var(--exec); border-radius:10px; padding:1px 7px; margin-left:6px; }
+  .pill.off { background:#f1f1f1; color:#666; }
+  .tnote { font-size:12px; color:var(--warn); margin:4px 0; }
+  .call { border-left:3px solid var(--exec); padding:4px 8px; margin:5px 0; background:#f8faff; font-size:13px; }
+  .call.err { border-left-color:var(--err); background:#fff6f6; } .call.aicall { border-left-color:var(--ai); background:#faf6ff; }
+  .call.none { border-left-color:#bbb; background:#f7f7f7; color:#555; }
+  .tchanges { font-size:13px; margin-top:4px; } .chg { display:inline-block; margin:2px 8px 2px 0; }
+  .muted { color:var(--muted); } details summary { cursor:pointer; color:var(--muted); }
+  pre { font-size:11px; max-height:240px; overflow:auto; background:#f5f6f8; padding:8px; border-radius:6px; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>MOSU clarification workflow: visual demonstrator</h1>
+  <p>Fictional data · mock services · the drafting step is a simulated AI (deterministic mock). Executes the unchanged stage-1 <code style="background:#2a3245;color:#dfe5f1">workflow.mjs</code>.</p>
+</header>
+<main>
+  <div>
+    <section>
+      <h2>Scenario</h2>
+      <div class="row">
+        <select id="scenario">
+          <option value="A">A. Normal execution</option>
+          <option value="B">B. Delivered, response times out</option>
+          <option value="B2">B2. Both attempts time out (limit check)</option>
+        </select>
+        <button id="btnReset">Reset</button>
+      </div>
+      <div><b id="scenarioTitle"></b></div>
+      <ol id="steps"></ol>
+      <button id="btnNext" class="primary" style="width:100%"></button>
+      <div class="narr" id="narration" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>Workflow controls <small>(each sends one real event to handle())</small></h2>
+      <div class="col">
+        <button id="btnLoad">Load profile (LOAD_PROFILE)</button>
+        <button id="btnApprove">Approve pending action (APPROVE_ACTION, exact id)</button>
+        <button id="btnSend">Send</button>
+      </div>
+      <div class="box pause" id="pauseBox" hidden><b>Paused: delivery outcome unknown.</b> The provider may already have delivered. You can stop here, or choose the permitted retry above: same idempotency key, same recipient and text, at most 2 attempts in total.</div>
+      <div class="box recon" id="reconBox" hidden><b>Attempt limit reached.</b> No further notify() calls are allowed. Outcome <code>needs_reconciliation</code>: a human must check provider records.</div>
+      <h2 style="margin-top:12px">Changed conditions <small>(for discussion)</small></h2>
+      <div class="col">
+        <button id="btnCorrected">Submit corrected profile as a new version (v+1, all fields in cm)</button>
+        <button id="btnProtocol">Designer revises protocol (r+1), then reload same profile</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Notification counts <small>(what the app knows from tool responses)</small></h2>
+      <div class="kpis" id="appCounts"></div>
+    </section>
+    <section class="provider">
+      <h2>Provider-internal debug <small>(the workflow never reads this)</small></h2>
+      <div id="providerCounts"></div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Shown only for the demo, so requests and real deliveries can be compared. The application's knowledge comes only from what <code>notify()</code> returned or threw.</p>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>Workflow graph <small>active stage: <b id="activeLabel"></b></small></h2>
+      <svg id="diagram" viewBox="0 0 1060 336" role="img" aria-label="Workflow diagram"></svg>
+      <div class="legend">
+        <span><i style="border:4px solid #e8590c;background:#fff4ec"></i>active stage (from current state)</span>
+        <span><i style="background:#eaf0fd;border:1.5px solid #2457c5"></i>executed in this run</span>
+        <span><i style="border:1.5px solid #2457c5;background:#fff"></i>implemented, not reached yet</span>
+        <span><i style="border:1.5px dashed #9aa1ad;background:#fafafa"></i>conceptual (not implemented)</span>
+        <span><i style="border:1.5px solid #7a3fd1;background:#f2eafd"></i>simulated AI (mock)</span>
+      </div>
+    </section>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <section>
+        <h2>State panel <small>(persisted JSON state)</small></h2>
+        <table id="state"></table>
+        <details><summary>raw state JSON</summary><pre id="rawState"></pre></details>
+      </section>
+      <section>
+        <h2>Event trace <small>(newest first: inputs, tool calls, results, state changes)</small></h2>
+        <div id="trace"></div>
+      </section>
+    </div>
+  </div>
+</main>
+<script type="module" src="./web/app.js"></script>
+</body>
+</html>
